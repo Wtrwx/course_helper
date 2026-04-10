@@ -5,6 +5,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
+import 'package:flutter_html/flutter_html.dart';
 import 'package:image_gallery_saver_plus/image_gallery_saver_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'dart:async';
@@ -48,6 +49,7 @@ class _PresentationPageState extends State<PresentationPage> {
   final List<TimelineEvent> _timeline = [];
 
   Problem? _currentProblem;
+  String? _answerProblemId;
   String? _timelineProblemId; // 从timeline点击的题目
   List<String>? _answer;
   String? _textAnswer;
@@ -206,7 +208,9 @@ class _PresentationPageState extends State<PresentationPage> {
               _currentLessonSlideIndex = targetIndex; // 记录课堂当前播放的页码
               if (_currentSlideIndex >= 0 &&
                   _currentSlideIndex < _slides.length) {
-                _currentProblem = _slides[_currentSlideIndex]['problem'];
+                _setCurrentProblem(
+                  _slides[_currentSlideIndex]['problem'] as Problem?,
+                );
               }
             });
           }
@@ -243,7 +247,7 @@ class _PresentationPageState extends State<PresentationPage> {
                 _unlockedProblemIds.add(problemId);
               }
               if (_currentProblem != null && dt != null) {
-                _currentProblem = _currentProblem!.copyWith(dt: dt);
+                _setCurrentProblem(_currentProblem!.copyWith(dt: dt));
               }
             });
             _startCountdown(limit);
@@ -267,7 +271,9 @@ class _PresentationPageState extends State<PresentationPage> {
             _currentSlideIndex = targetIndex;
             if (_currentSlideIndex >= 0 &&
                 _currentSlideIndex < _slides.length) {
-              _currentProblem = _slides[_currentSlideIndex]['problem'];
+              _setCurrentProblem(
+                _slides[_currentSlideIndex]['problem'] as Problem?,
+              );
             }
           });
           // 滑动到指定页面
@@ -294,7 +300,9 @@ class _PresentationPageState extends State<PresentationPage> {
             _currentSlideIndex = targetIndex;
             if (_currentSlideIndex >= 0 &&
                 _currentSlideIndex < _slides.length) {
-              _currentProblem = _slides[_currentSlideIndex]['problem'];
+              _setCurrentProblem(
+                _slides[_currentSlideIndex]['problem'] as Problem?,
+              );
             }
           });
           // 滑动到指定页面
@@ -320,7 +328,9 @@ class _PresentationPageState extends State<PresentationPage> {
               _currentSlideIndex = targetIndex;
               if (_currentSlideIndex >= 0 &&
                   _currentSlideIndex < _slides.length) {
-                _currentProblem = _slides[_currentSlideIndex]['problem'];
+                _setCurrentProblem(
+                  _slides[_currentSlideIndex]['problem'] as Problem?,
+                );
               }
             });
             // 滑动到指定页面
@@ -487,7 +497,7 @@ class _PresentationPageState extends State<PresentationPage> {
           if (_slides.isNotEmpty &&
               _currentSlideIndex >= 0 &&
               _currentSlideIndex < _slides.length) {
-            _currentProblem = presentation.slides[_currentSlideIndex].problem;
+            _setCurrentProblem(presentation.slides[_currentSlideIndex].problem);
           }
           _isLoading = false;
         });
@@ -516,6 +526,20 @@ class _PresentationPageState extends State<PresentationPage> {
         }
       });
     });
+  }
+
+  void _setCurrentProblem(Problem? problem) {
+    final problemId = problem?.problemId;
+    final problemChanged = problemId != _answerProblemId;
+
+    _currentProblem = problem;
+    if (problemChanged) {
+      _answerProblemId = problemId;
+      _answer = null;
+      _textAnswer = null;
+      _selectedImages.clear();
+      _uploadedImageUrls.clear();
+    }
   }
 
   String? _getSlideImageUrlByIndex(int index) {
@@ -763,7 +787,9 @@ class _PresentationPageState extends State<PresentationPage> {
                         onPageChanged: (index) {
                           setState(() {
                             _currentSlideIndex = index;
-                            _currentProblem = _slides[index]['problem'];
+                            _setCurrentProblem(
+                              _slides[index]['problem'] as Problem?,
+                            );
                           });
                         },
                         itemBuilder: (context, index) {
@@ -1009,12 +1035,16 @@ class _PresentationPageState extends State<PresentationPage> {
                                 ),
                                 if (_isProblemExpanded) ...[
                                   const SizedBox(height: 12),
-                                  Text(
-                                    _currentProblem!.body,
-                                    style: const TextStyle(
-                                      fontSize: 15,
-                                      fontWeight: FontWeight.w500,
-                                    ),
+                                  Html(
+                                    data: _currentProblem!.body,
+                                    style: {
+                                      'body': Style(
+                                        margin: Margins.zero,
+                                        padding: HtmlPaddings.zero,
+                                        fontSize: FontSize(15),
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    },
                                   ),
                                   const SizedBox(height: 16),
                                   _buildAnswerOptions(),
@@ -1259,9 +1289,9 @@ class _PresentationPageState extends State<PresentationPage> {
         _currentSlideIndex = targetIndex;
         // 设置当前题目
         if (targetIndex >= 0 && targetIndex < _slides.length) {
-          _currentProblem = _slides[targetIndex]['problem'];
+          _setCurrentProblem(_slides[targetIndex]['problem'] as Problem?);
           if (_currentProblem != null && event.problemDt != null) {
-            _currentProblem = _currentProblem!.copyWith(dt: event.problemDt);
+            _setCurrentProblem(_currentProblem!.copyWith(dt: event.problemDt));
           }
         }
         // 记录从 timeline 点击的 problemId
@@ -1613,6 +1643,31 @@ class _PresentationPageState extends State<PresentationPage> {
     );
   }
 
+  Widget _buildOptionTitle(ProblemOption option) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          '${option.key}. ',
+          style: const TextStyle(fontWeight: FontWeight.w500),
+        ),
+        Expanded(
+          child: Html(
+            data: option.value,
+            style: {
+              'body': Style(
+                margin: Margins.zero,
+                padding: HtmlPaddings.zero,
+                fontSize: FontSize(14),
+              ),
+              'p': Style(margin: Margins.zero, padding: HtmlPaddings.zero),
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildChoiceOptions() {
     if (_currentProblem == null) return const SizedBox.shrink();
 
@@ -1630,7 +1685,7 @@ class _PresentationPageState extends State<PresentationPage> {
           final isSelected = (_answer ?? []).contains(key);
           return CheckboxListTile(
             value: isSelected,
-            title: Text('$key. ${option.value}'),
+            title: _buildOptionTitle(option),
             contentPadding: const EdgeInsets.symmetric(horizontal: 8),
             activeColor: Theme.of(context).colorScheme.primary,
             controlAffinity: ListTileControlAffinity.trailing,
@@ -1665,7 +1720,7 @@ class _PresentationPageState extends State<PresentationPage> {
         children: options.map((option) {
           return RadioListTile<String>(
             value: option.key,
-            title: Text('${option.key}. ${option.value}'),
+            title: _buildOptionTitle(option),
             contentPadding: const EdgeInsets.symmetric(horizontal: 8),
             activeColor: Theme.of(context).colorScheme.primary,
             controlAffinity: ListTileControlAffinity.trailing,
@@ -1695,7 +1750,7 @@ class _PresentationPageState extends State<PresentationPage> {
           final isSelected = (_answer ?? []).contains(key);
           return CheckboxListTile(
             value: isSelected,
-            title: Text('$key. ${option.value}'),
+            title: _buildOptionTitle(option),
             contentPadding: const EdgeInsets.symmetric(horizontal: 8),
             activeColor: Theme.of(context).colorScheme.primary,
             controlAffinity: ListTileControlAffinity.trailing,
@@ -1735,7 +1790,7 @@ class _PresentationPageState extends State<PresentationPage> {
           children: options.map((option) {
             return RadioListTile<String>(
               value: option.key,
-              title: Text('${option.key}. ${option.value}'),
+              title: _buildOptionTitle(option),
               contentPadding: const EdgeInsets.symmetric(horizontal: 8),
               activeColor: Theme.of(context).colorScheme.primary,
               controlAffinity: ListTileControlAffinity.trailing,
