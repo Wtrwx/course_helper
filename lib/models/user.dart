@@ -12,17 +12,17 @@ class User {
     required this.phone,
     required this.uid,
     required this.school,
-    this.platform = 'chaoxing'
+    this.platform = 'rainClassroom',
   });
 
   factory User.fromJson(Map<String, dynamic> json) {
     return User(
-        name: json['name'] ?? '未知用户',
-        avatar: json['avatar'] ?? '',
-        phone: json['phone'] ?? '未知手机号',
-        uid: json['uid'] ?? '0',
-        school: json['school'] ?? '未知学校',
-        platform: json['platform'] ?? 'chaoxing'
+      name: json['name'] ?? '未知用户',
+      avatar: json['avatar'] ?? '',
+      phone: json['phone'] ?? '未知手机号',
+      uid: json['uid'] ?? '0',
+      school: json['school'] ?? '未知学校',
+      platform: json['platform'] ?? 'rainClassroom',
     );
   }
 
@@ -33,7 +33,7 @@ class User {
       'phone': phone,
       'uid': uid,
       'school': school,
-      'platform': platform
+      'platform': platform,
     };
   }
 

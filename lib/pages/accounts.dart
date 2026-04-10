@@ -11,7 +11,8 @@ import 'widget/avatar.dart';
 import 'login.dart';
 
 class AccountChangeNotifier {
-  static final AccountChangeNotifier _instance = AccountChangeNotifier._internal();
+  static final AccountChangeNotifier _instance =
+      AccountChangeNotifier._internal();
   factory AccountChangeNotifier() => _instance;
   AccountChangeNotifier._internal();
 
@@ -35,12 +36,12 @@ class AccountsPage extends StatefulWidget {
   State<AccountsPage> createState() => _AccountsPageState();
 }
 
-class _AccountsPageState extends State<AccountsPage> with TickerProviderStateMixin {
+class _AccountsPageState extends State<AccountsPage>
+    with TickerProviderStateMixin {
   List<User> _accounts = [];
   final Set<String> _selectedAccounts = <String>{};
   bool _isMultiSelectMode = false;
   String? _currentAccountId;
-  PlatformType _selectedPlatform = PlatformManager().currentPlatform;
   StreamSubscription? _accountChangeSubscription;
 
   @override
@@ -49,12 +50,13 @@ class _AccountsPageState extends State<AccountsPage> with TickerProviderStateMix
     _loadAccounts();
 
     // 监听账户变更事件
-    _accountChangeSubscription =
-        AccountChangeNotifier().accountChanges.listen((accountId) {
-          if (mounted) {
-            _loadAccounts();
-          }
-        });
+    _accountChangeSubscription = AccountChangeNotifier().accountChanges.listen((
+      accountId,
+    ) {
+      if (mounted) {
+        _loadAccounts();
+      }
+    });
   }
 
   @override
@@ -116,7 +118,9 @@ class _AccountsPageState extends State<AccountsPage> with TickerProviderStateMix
   Future<void> _navigateToPasswordLogin() async {
     final result = await Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => const LoginPage(initialLoginType: 'password')),
+      MaterialPageRoute(
+        builder: (_) => const LoginPage(initialLoginType: 'password'),
+      ),
     );
     if (result == true) {
       await _loadAccounts();
@@ -126,7 +130,9 @@ class _AccountsPageState extends State<AccountsPage> with TickerProviderStateMix
   Future<void> _navigateToCaptchaLogin() async {
     final result = await Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => const LoginPage(initialLoginType: 'captcha')),
+      MaterialPageRoute(
+        builder: (_) => const LoginPage(initialLoginType: 'captcha'),
+      ),
     );
     if (result == true) {
       await _loadAccounts();
@@ -138,9 +144,9 @@ class _AccountsPageState extends State<AccountsPage> with TickerProviderStateMix
 
     if (!await qrState.initialize()) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('获取二维码失败')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('获取二维码失败')));
       }
       qrState.dispose();
       return;
@@ -188,42 +194,57 @@ class _AccountsPageState extends State<AccountsPage> with TickerProviderStateMix
                           ),
                         ],
                       ),
-                      child: qrState.qrImageData != null
+                      child: qrState.qrImageUrl != null
                           ? ClipRRect(
-                        borderRadius: BorderRadius.circular(12),
-                        child: Image.memory(
-                          qrState.qrImageData!,
-                          fit: BoxFit.contain,
-                          gaplessPlayback: true,
-                        ),
-                      )
+                              borderRadius: BorderRadius.circular(12),
+                              child: Image.network(
+                                qrState.qrImageUrl!,
+                                fit: BoxFit.contain,
+                                gaplessPlayback: true,
+                              ),
+                            )
                           : qrState.isLoading
                           ? const Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            CircularProgressIndicator(),
-                            SizedBox(height: 8),
-                            Text('生成中...', style: TextStyle(fontSize: 12)),
-                          ],
-                        ),
-                      )
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  CircularProgressIndicator(),
+                                  SizedBox(height: 8),
+                                  Text(
+                                    '生成中...',
+                                    style: TextStyle(fontSize: 12),
+                                  ),
+                                ],
+                              ),
+                            )
                           : const Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(Icons.error_outline, size: 48, color: Colors.grey),
-                            SizedBox(height: 8),
-                            Text('二维码加载失败', style: TextStyle(color: Colors.grey)),
-                          ],
-                        ),
-                      ),
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(
+                                    Icons.error_outline,
+                                    size: 48,
+                                    color: Colors.grey,
+                                  ),
+                                  SizedBox(height: 8),
+                                  Text(
+                                    '二维码加载失败',
+                                    style: TextStyle(color: Colors.grey),
+                                  ),
+                                ],
+                              ),
+                            ),
                     ),
                     const SizedBox(height: 20),
-                    const Text(
-                      '使用学习通APP扫码登录',
+                    Text(
+                      PlatformManager().isChaoxing
+                          ? '使用学习通APP扫码登录'
+                          : '使用微信扫码登录',
                       textAlign: TextAlign.center,
-                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                      ),
                     ),
                     const SizedBox(height: 8),
                     const Text(
@@ -246,11 +267,13 @@ class _AccountsPageState extends State<AccountsPage> with TickerProviderStateMix
                     onPressed: qrState.isRefreshing || qrState.isLoading
                         ? null
                         : () async {
-                      setState(() => qrState.isRefreshing = true);
-                      await qrState.refreshQRCode();
-                      setState(() => qrState.isRefreshing = false);
-                    },
-                    child: qrState.isRefreshing ? const Text('刷新中...') : const Text('刷新'),
+                            setState(() => qrState.isRefreshing = true);
+                            await qrState.refreshQRCode();
+                            setState(() => qrState.isRefreshing = false);
+                          },
+                    child: qrState.isRefreshing
+                        ? const Text('刷新中...')
+                        : const Text('刷新'),
                   ),
                 ],
               ),
@@ -275,14 +298,21 @@ class _AccountsPageState extends State<AccountsPage> with TickerProviderStateMix
               color: Theme.of(context).colorScheme.primary,
               borderRadius: BorderRadius.circular(10),
             ),
-            child: const Text('当前', style: TextStyle(color: Colors.white, fontSize: 12)),
+            child: const Text(
+              '当前',
+              style: TextStyle(color: Colors.white, fontSize: 12),
+            ),
           ),
       ],
     );
   }
 
   Widget _buildListItemContent(
-      BuildContext context, User user, bool isSelected, bool isCurrentAccount) {
+    BuildContext context,
+    User user,
+    bool isSelected,
+    bool isCurrentAccount,
+  ) {
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       leading: AvatarWidget(key: ValueKey(user.avatar), imageUrl: user.avatar),
@@ -307,12 +337,8 @@ class _AccountsPageState extends State<AccountsPage> with TickerProviderStateMix
 
   void _showAboutDialog() async {
     final packageInfo = await PackageInfo.fromPlatform();
-    final appIcon = Image.asset(
-      'images/logo.png',
-      width: 60,
-      height: 60
-    );
-    
+    final appIcon = Image.asset('images/logo.png', width: 60, height: 60);
+
     showAboutDialog(
       context: context,
       applicationName: '课程助手',
@@ -320,7 +346,7 @@ class _AccountsPageState extends State<AccountsPage> with TickerProviderStateMix
       applicationIcon: appIcon,
       // applicationLegalese: '',
       children: [
-        const Text('一个管理学习通、雨课堂课程的应用。'),
+        const Text('一个管理雨课堂课程的应用。'),
         const Text('支持多账号管理、课程查看、活动签到等功能。'),
         const SizedBox(height: 8),
         Row(
@@ -335,9 +361,7 @@ class _AccountsPageState extends State<AccountsPage> with TickerProviderStateMix
               },
               child: Text(
                 'AneryCoft',
-                style: TextStyle(
-                  color: Theme.of(context).colorScheme.primary
-                ),
+                style: TextStyle(color: Theme.of(context).colorScheme.primary),
               ),
             ),
           ],
@@ -360,62 +384,61 @@ class _AccountsPageState extends State<AccountsPage> with TickerProviderStateMix
               onPressed: _deleteSelectedAccounts,
               tooltip: '删除选中账号',
             ),
-          if (_selectedPlatform == PlatformType.rainClassroom)
-            PopupMenuButton<RainClassroomServerType>(
-              icon: const Icon(Icons.dns),
-              tooltip: '切换服务器',
-              onSelected: (RainClassroomServerType server) async {
-                await PlatformManager().setServer(server);
-              },
-              itemBuilder: (BuildContext context) => [
-                PopupMenuItem<RainClassroomServerType>(
-                  enabled: true,
-                  child: StatefulBuilder(
-                    builder: (BuildContext context, StateSetter setPopupState) {
-                      return Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          RadioGroup<RainClassroomServerType>(
-                            groupValue: PlatformManager().currentServer,
-                            onChanged: (RainClassroomServerType? value) async {
-                              if (value != null) {
-                                setPopupState(() {});
-                                Navigator.pop(context);
-                                await PlatformManager().setServer(value);
-                              }
-                            },
-                            child: Column(
-                              children: [
-                                RadioListTile<RainClassroomServerType>(
-                                  title: const Text('雨课堂'),
-                                  value: RainClassroomServerType.yuketang,
-                                  dense: true
-                                ),
-                                RadioListTile<RainClassroomServerType>(
-                                  title: const Text('荷塘 · 雨课堂'),
-                                  value: RainClassroomServerType.pro,
-                                  dense: true
-                                ),
-                                RadioListTile<RainClassroomServerType>(
-                                  title: const Text('长江 · 雨课堂'),
-                                  value: RainClassroomServerType.changjiang,
-                                  dense: true
-                                ),
-                                RadioListTile<RainClassroomServerType>(
-                                  title: const Text('黄河 · 雨课堂'),
-                                  value: RainClassroomServerType.huanghe,
-                                  dense: true
-                                ),
-                              ],
-                            ),
+          PopupMenuButton<RainClassroomServerType>(
+            icon: const Icon(Icons.dns),
+            tooltip: '切换服务器',
+            onSelected: (RainClassroomServerType server) async {
+              await PlatformManager().setServer(server);
+            },
+            itemBuilder: (BuildContext context) => [
+              PopupMenuItem<RainClassroomServerType>(
+                enabled: true,
+                child: StatefulBuilder(
+                  builder: (BuildContext context, StateSetter setPopupState) {
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        RadioGroup<RainClassroomServerType>(
+                          groupValue: PlatformManager().currentServer,
+                          onChanged: (RainClassroomServerType? value) async {
+                            if (value != null) {
+                              setPopupState(() {});
+                              Navigator.pop(context);
+                              await PlatformManager().setServer(value);
+                            }
+                          },
+                          child: Column(
+                            children: [
+                              RadioListTile<RainClassroomServerType>(
+                                title: const Text('雨课堂'),
+                                value: RainClassroomServerType.yuketang,
+                                dense: true,
+                              ),
+                              RadioListTile<RainClassroomServerType>(
+                                title: const Text('荷塘 · 雨课堂'),
+                                value: RainClassroomServerType.pro,
+                                dense: true,
+                              ),
+                              RadioListTile<RainClassroomServerType>(
+                                title: const Text('长江 · 雨课堂'),
+                                value: RainClassroomServerType.changjiang,
+                                dense: true,
+                              ),
+                              RadioListTile<RainClassroomServerType>(
+                                title: const Text('黄河 · 雨课堂'),
+                                value: RainClassroomServerType.huanghe,
+                                dense: true,
+                              ),
+                            ],
                           ),
-                        ],
-                      );
-                    },
-                  ),
+                        ),
+                      ],
+                    );
+                  },
                 ),
-              ],
-            ),
+              ),
+            ],
+          ),
           PopupMenuButton<String>(
             icon: const Icon(Icons.more_horiz),
             onSelected: (String result) {
@@ -424,83 +447,52 @@ class _AccountsPageState extends State<AccountsPage> with TickerProviderStateMix
               }
             },
             itemBuilder: (BuildContext context) => [
-              // 平台切换菜单项
-              PopupMenuItem<String>(
-                enabled: true,
-                child: StatefulBuilder(
-                  builder: (BuildContext context, StateSetter setState) {
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        RadioGroup<PlatformType>(
-                          groupValue: _selectedPlatform,
-                          onChanged: (PlatformType? value) async {
-                            if (value != null) {
-                              setState(() {
-                                _selectedPlatform = value;
-                              });
-                              Navigator.pop(context);
-                              await PlatformManager().setPlatform(value);
-                            }
-                          },
-                          child: Column(
-                            children: [
-                              RadioListTile<PlatformType>(
-                                title: const Text('学习通'),
-                                value: PlatformType.chaoxing,
-                                dense: true,
-                              ),
-                              RadioListTile<PlatformType>(
-                                title: const Text('雨课堂'),
-                                value: PlatformType.rainClassroom,
-                                dense: true,
-                              ),
-                            ],
-                          ),
-                        ),
-                        const Divider(height: 1),
-                      ],
-                    );
-                  },
-                ),
-              ),
               // 关于菜单项
               const PopupMenuItem<String>(
                 value: 'about',
-                child: Row(
-                  children: [
-                    Text('关于'),
-                  ],
-                ),
+                child: Row(children: [Text('关于')]),
               ),
             ],
-          )
+          ),
         ],
       ),
       body: _accounts.isEmpty
           ? const Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text('暂无账号', style: TextStyle(fontSize: 18, color: Colors.grey)),
-            SizedBox(height: 8),
-            Text('点击右下角添加账号', style: TextStyle(color: Colors.grey)),
-          ],
-        ),
-      )
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    '暂无账号',
+                    style: TextStyle(fontSize: 18, color: Colors.grey),
+                  ),
+                  SizedBox(height: 8),
+                  Text('点击右下角添加账号', style: TextStyle(color: Colors.grey)),
+                ],
+              ),
+            )
           : ListView.builder(
-        itemCount: _accounts.length,
-        itemBuilder: (context, index) {
-          final user = _accounts[index];
-          final isSelected = _selectedAccounts.contains(user.uid);
-          final isCurrent = user.uid == _currentAccountId;
-          return Card(
-            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            color: isCurrent ? Theme.of(context).colorScheme.primaryContainer : null,
-            child: _buildListItemContent(context, user, isSelected, isCurrent),
-          );
-        },
-      ),
+              itemCount: _accounts.length,
+              itemBuilder: (context, index) {
+                final user = _accounts[index];
+                final isSelected = _selectedAccounts.contains(user.uid);
+                final isCurrent = user.uid == _currentAccountId;
+                return Card(
+                  margin: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
+                  ),
+                  color: isCurrent
+                      ? Theme.of(context).colorScheme.primaryContainer
+                      : null,
+                  child: _buildListItemContent(
+                    context,
+                    user,
+                    isSelected,
+                    isCurrent,
+                  ),
+                );
+              },
+            ),
       floatingActionButton: SpeedDial(
         icon: Icons.add,
         activeIcon: Icons.close,
@@ -508,7 +500,9 @@ class _AccountsPageState extends State<AccountsPage> with TickerProviderStateMix
         spaceBetweenChildren: 2,
         overlayColor: Colors.transparent,
         overlayOpacity: 0.3,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.0)),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12.0),
+        ),
         children: [
           SpeedDialChild(
             child: const Icon(Icons.qr_code),

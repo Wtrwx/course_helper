@@ -10,7 +10,7 @@ import 'pages/accounts.dart';
 /// 平台类型枚举
 enum PlatformType {
   chaoxing, // 学习通
-  rainClassroom // 雨课堂
+  rainClassroom, // 雨课堂
 }
 
 /// 雨课堂服务器类型枚举
@@ -18,7 +18,7 @@ enum RainClassroomServerType {
   yuketang, // 雨课堂
   pro, // 荷塘雨课堂
   changjiang, // 长江雨课堂
-  huanghe // 黄河雨课堂
+  huanghe, // 黄河雨课堂
 }
 
 /// 平台状态管理器
@@ -30,11 +30,12 @@ class PlatformManager {
   late SharedPreferences _prefs;
   static const _platformKey = 'current_platform';
   static const _serverKey = 'current_server';
-  PlatformType _currentPlatform = PlatformType.chaoxing;
+  PlatformType _currentPlatform = PlatformType.rainClassroom;
   RainClassroomServerType _currentServer = RainClassroomServerType.yuketang;
-  
+
   // 平台变化通知流
-  final StreamController<PlatformType> _platformChangeController = StreamController<PlatformType>.broadcast();
+  final StreamController<PlatformType> _platformChangeController =
+      StreamController<PlatformType>.broadcast();
   Stream<PlatformType> get platformChanges => _platformChangeController.stream;
 
   /// 获取当前平台
@@ -42,10 +43,10 @@ class PlatformManager {
 
   bool get isChaoxing => _currentPlatform == PlatformType.chaoxing;
   bool get isRainClassroom => _currentPlatform == PlatformType.rainClassroom;
-  
+
   /// 获取当前雨课堂服务器
   RainClassroomServerType get currentServer => _currentServer;
-  
+
   /// 获取雨课堂服务器名称
   String get serverName {
     switch (_currentServer) {
@@ -64,19 +65,10 @@ class PlatformManager {
   Future<void> initialize() async {
     try {
       _prefs = await SharedPreferences.getInstance();
-      final platformStr = _prefs.getString(_platformKey);
+      // 只保留雨课堂功能，平台固定为雨课堂
+      _currentPlatform = PlatformType.rainClassroom;
+      await _prefs.setString(_platformKey, currentPlatformName);
 
-      if (platformStr != null && platformStr.isNotEmpty) {
-        switch (platformStr.toLowerCase()) {
-          case 'chaoxing':
-            _currentPlatform = PlatformType.chaoxing;
-            break;
-          case 'rainclassroom':
-            _currentPlatform = PlatformType.rainClassroom;
-            break;
-        }
-      }
-      
       // 加载雨课堂服务器设置
       final serverStr = _prefs.getString(_serverKey);
       if (serverStr != null && serverStr.isNotEmpty) {
@@ -95,9 +87,9 @@ class PlatformManager {
             break;
         }
       }
-      
+
       // 触发平台变化回调，初始化 headers
-      ApiService.onPlatformChange!();
+      ApiService.onPlatformChange?.call();
     } catch (e) {
       debugPrint('加载平台失败：$e');
     }
@@ -105,6 +97,11 @@ class PlatformManager {
 
   /// 设置平台
   Future<void> setPlatform(PlatformType platform) async {
+    if (platform != PlatformType.rainClassroom) {
+      debugPrint('已禁用非雨课堂平台切换');
+      return;
+    }
+
     final oldPlatform = _currentPlatform;
 
     if (oldPlatform != platform) {
@@ -119,10 +116,12 @@ class PlatformManager {
       await AccountManager.switchToPlatformAccount();
       await AccountManager.refreshAccounts();
       await CookieManager.loadAllCookies();
-      AccountChangeNotifier().notifyAccountChanged(AccountManager.currentSessionId);
+      AccountChangeNotifier().notifyAccountChanged(
+        AccountManager.currentSessionId,
+      );
     }
   }
-  
+
   /// 设置雨课堂服务器
   Future<void> setServer(RainClassroomServerType server) async {
     if (_currentServer != server) {
@@ -138,10 +137,9 @@ class PlatformManager {
 
   /// 获取平台字符串标识
   String get currentPlatformName {
-    return _currentPlatform == PlatformType.chaoxing ?
-    'chaoxing' : 'rainClassroom';
+    return 'rainClassroom';
   }
-  
+
   void dispose() {
     _platformChangeController.close();
   }

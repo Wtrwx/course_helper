@@ -5,17 +5,21 @@ import 'package:cookie_jar/cookie_jar.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../api/login.dart';
-import 'account.dart';
 import '../platform.dart';
+import 'account.dart';
 
 class CookieInterceptor extends Interceptor {
   @override
-  void onRequest(RequestOptions options, RequestInterceptorHandler handler) async {
-    if (options.headers['Cookie'] == null){
+  void onRequest(
+    RequestOptions options,
+    RequestInterceptorHandler handler,
+  ) async {
+    if (options.headers['Cookie'] == null) {
       final uri = options.uri;
       List<Cookie> cookies = [];
-      CookieJar? cookieJar= CookieManager.isLoggingIn ?
-      CookieManager.getTempCookieJar() : CookieManager.getCurrentUserCookieJar();
+      CookieJar? cookieJar = CookieManager.isLoggingIn
+          ? CookieManager.getTempCookieJar()
+          : CookieManager.getCurrentUserCookieJar();
       if (cookieJar != null) {
         cookies = await cookieJar.loadForRequest(uri);
       }
@@ -24,11 +28,20 @@ class CookieInterceptor extends Interceptor {
         final cookieStr = cookies.map((c) => '${c.name}=${c.value}').join('; ');
         options.headers['Cookie'] = cookieStr;
 
-        if (PlatformManager().isRainClassroom){
-          final cookieMap = Map.fromEntries(cookies.map((c) => MapEntry(c.name, c.value)));
-          options.headers['x-csrftoken'] = cookieMap['x-csrftoken'];
-          options.headers['x-uid'] = cookieMap['x-uid'];
-          options.headers['sessionid'] = cookieMap['sessionid'];
+        if (PlatformManager().isRainClassroom) {
+          final cookieMap = Map.fromEntries(
+            cookies.map((c) => MapEntry(c.name, c.value)),
+          );
+          if (cookieMap.containsKey('sid')) {
+            // APP
+            options.headers['x-csrftoken'] = cookieMap['x-csrftoken'];
+            options.headers['x-uid'] = cookieMap['x-uid'];
+            options.headers['sessionid'] = cookieMap['sessionid'];
+          } else {
+            // Web
+            options.headers['x-client'] = 'web';
+            options.headers['xt-agent'] = 'web';
+          }
         }
       }
     }
@@ -40,8 +53,10 @@ class CookieInterceptor extends Interceptor {
   void onResponse(Response response, ResponseInterceptorHandler handler) async {
     final setCookieHeaders = response.headers['set-cookie'];
     if (setCookieHeaders != null) {
-      final cookies = setCookieHeaders.map((s) => Cookie.fromSetCookieValue(s)).toList();
-      
+      final cookies = setCookieHeaders
+          .map((s) => Cookie.fromSetCookieValue(s))
+          .toList();
+
       if (CookieManager.isLoggingIn) {
         await CookieManager.tempSaveCookie(cookies);
       } else {
@@ -57,7 +72,6 @@ class CookieInterceptor extends Interceptor {
 }
 
 class CookieManager {
-  static const cxDomain = '.chaoxing.com';
   static const rcDomain = '.yuketang.cn';
   static bool isLoggingIn = false;
   static final Map<String, CookieJar> _userCookieJars = {};
@@ -86,7 +100,7 @@ class CookieManager {
       }
     }
 
-    if (refreshCounts < 2){
+    if (refreshCounts < 2) {
       await _refreshAccounts();
     }
   }
@@ -102,8 +116,7 @@ class CookieManager {
     final currentUserId = AccountManager.currentSessionId;
     if (currentUserId == null) return;
 
-    final getUserInfoApi = PlatformManager().isChaoxing?
-    CXLoginApi.getUserInfo : RCLoginApi.getUserInfo;
+    final getUserInfoApi = RCLoginApi.getUserInfo;
 
     for (final user in accounts) {
       try {
@@ -127,14 +140,13 @@ class CookieManager {
   }
 
   static Uri getDomainUri() {
-    return PlatformManager().isChaoxing?
-    Uri.parse('https://$cxDomain') : Uri.parse('https://$rcDomain');
+    return Uri.parse('https://$rcDomain');
   }
 
   /// 临时保存Cookie到内存
   static Future<void> tempSaveCookie(List<Cookie> cookies) async {
     _tempCookieJar ??= CookieJar();
-    
+
     for (var cookie in cookies) {
       late Uri uri;
       if (cookie.domain != null && cookie.domain!.isNotEmpty) {
@@ -165,7 +177,10 @@ class CookieManager {
   }
 
   /// 加载用户的 Cookie
-  static Future<void> _loadCookiesForUser(String userId, CookieJar cookieJar) async {
+  static Future<void> _loadCookiesForUser(
+    String userId,
+    CookieJar cookieJar,
+  ) async {
     final String? cookiesJson = _prefs.getString('cookies_$userId');
     if (cookiesJson == null) return;
 
@@ -185,7 +200,8 @@ class CookieManager {
         if (cookieData.containsKey('secure') && cookieData['secure'] != null) {
           cookie.secure = cookieData['secure'] as bool;
         }
-        if (cookieData.containsKey('httpOnly') && cookieData['httpOnly'] != null) {
+        if (cookieData.containsKey('httpOnly') &&
+            cookieData['httpOnly'] != null) {
           cookie.httpOnly = cookieData['httpOnly'] as bool;
         }
 
@@ -209,7 +225,7 @@ class CookieManager {
       cookiesData.add({
         'name': cookie.name,
         'value': cookie.value,
-        'domain': cookie.domain ?? (AccountManager.getAccountById(userId)?.isChaoxing ?? true ? cxDomain : rcDomain),
+        'domain': cookie.domain ?? rcDomain,
         'path': cookie.path ?? '/',
         'secure': cookie.secure,
         'httpOnly': cookie.httpOnly,

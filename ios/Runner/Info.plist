@@ -51,6 +51,10 @@
 	<string>需要访问您的位置信息来进行位置签到</string>
 	<key>NSCameraUsageDescription</key>
 	<string>需要使用相机来扫描二维码</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>需要保存课件图片和导出文件到系统相册</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>需要访问相册权限以保存课件图片和导出文件</string>
 	<key>io.flutter.embedded_views_preview</key>
 	<true/>
 	<key>BAIDU_MAP_AK</key>

@@ -2,15 +2,11 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/user.dart';
-import '../platform.dart';
 import 'cookie.dart';
-
 
 /// 统一的账户管理器
 class AccountManager {
-  static const _chaoxingSessionKey = 'chaoxing_current_session';
   static const _rainClassroomSessionKey = 'rainclassroom_current_session';
-  static const _chaoxingAccountsKey = 'chaoxing_accounts';
   static const _rainClassroomAccountsKey = 'rainclassroom_accounts';
 
   static late SharedPreferences _prefs;
@@ -20,10 +16,7 @@ class AccountManager {
 
   /// 从存储中获取所有账户（异步，从当前平台读取）
   static Future<List<User>> _getAllAccountsFromStorage() async {
-    final accountsKey = PlatformManager().isChaoxing ?
-    _chaoxingAccountsKey : _rainClassroomAccountsKey;
-    
-    final String? accountsJson = _prefs.getString(accountsKey);
+    final String? accountsJson = _prefs.getString(_rainClassroomAccountsKey);
     if (accountsJson != null) {
       final List<dynamic> accountsData = json.decode(accountsJson);
       return accountsData.map((data) => User.fromJson(data)).toList();
@@ -33,11 +26,8 @@ class AccountManager {
 
   /// 保存账户列表到存储（保存到当前平台）
   static Future<void> _saveAccounts(List<User> accounts) async {
-    final accountsKey = PlatformManager().isChaoxing ?
-    _chaoxingAccountsKey : _rainClassroomAccountsKey;
-    
     final accountsJson = json.encode(accounts.map((u) => u.toJson()).toList());
-    await _prefs.setString(accountsKey, accountsJson);
+    await _prefs.setString(_rainClassroomAccountsKey, accountsJson);
     // 同步更新缓存
     _accounts = accounts;
   }
@@ -53,23 +43,21 @@ class AccountManager {
 
   /// 获取当前会话的用户 ID（同步，使用缓存）
   static String? get currentSessionId => _currentSessionId;
-  
+
   /// 获取当前会话的用户 ID
   static Future<String?> getCurrentSession() async {
-    final sessionKey = PlatformManager().isChaoxing ?
-    _chaoxingSessionKey : _rainClassroomSessionKey;
-    _currentSessionId = _prefs.getString(sessionKey);
+    _currentSessionId = _prefs.getString(_rainClassroomSessionKey);
     return _currentSessionId;
   }
 
   /// 设置当前会话的用户 ID
   static Future<void> setCurrentSession(String? userId) async {
     _currentSessionId = userId;
-    final sessionKey = PlatformManager().isChaoxing ?
-    _chaoxingSessionKey : _rainClassroomSessionKey;
-    
+
     if (userId != null) {
-      await _prefs.setString(sessionKey, userId);
+      await _prefs.setString(_rainClassroomSessionKey, userId);
+    } else {
+      await _prefs.remove(_rainClassroomSessionKey);
     }
   }
 
@@ -143,9 +131,7 @@ class AccountManager {
 
   /// 清除当前会话（仅清除会话 ID，不清除账户数据）
   static Future<void> clearCurrentSession() async {
-    final sessionKey = PlatformManager().isChaoxing ?
-    _chaoxingSessionKey : _rainClassroomSessionKey;
-    await _prefs.remove(sessionKey);
+    await _prefs.remove(_rainClassroomSessionKey);
     final currentUserId = _currentSessionId;
     _currentSessionId = null;
     if (currentUserId != null) {

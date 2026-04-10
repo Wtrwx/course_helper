@@ -12,8 +12,9 @@ class CXCourseApi {
   /// 获取课程列表
   static Future<Map<String, dynamic>?> getCourses() async {
     try {
-      final url = 'https://mooc1-api.chaoxing.com/mycourse/backclazzdata?view=json&getTchClazzType=1&mcode=';
-      
+      final url =
+          'https://mooc1-api.chaoxing.com/mycourse/backclazzdata?view=json&getTchClazzType=1&mcode=';
+
       final response = await ApiService.sendRequest(url);
       return response.data;
     } catch (e) {
@@ -26,7 +27,7 @@ class CXCourseApi {
   static Future<List<Course>?> getCoursesList() async {
     try {
       final coursesData = await getCourses();
-      
+
       if (coursesData == null || coursesData['result'] != 1) {
         return null;
       }
@@ -35,7 +36,8 @@ class CXCourseApi {
       List<dynamic> channelList = coursesData['channelList'];
 
       for (var channel in channelList) {
-        if (channel['content']['course'] != null) { // 自己创建的课程
+        if (channel['content']['course'] != null) {
+          // 自己创建的课程
           courses.add(Course.fromCXJson(channel));
         }
       }
@@ -50,7 +52,11 @@ class CXCourseApi {
 
   /// 获取加入课程时间作为参数
   //（其实没必要）
-  static Future<String?> getJoinClassTime(String courseId, String classId, String cpi) async {
+  static Future<String?> getJoinClassTime(
+    String courseId,
+    String classId,
+    String cpi,
+  ) async {
     try {
       final url = 'https://mooc1-api.chaoxing.com/gas/clazzperson';
       final currentUserId = AccountManager.currentSessionId ?? '';
@@ -60,7 +66,7 @@ class CXCourseApi {
         'userid': currentUserId,
         'personid': cpi,
         'view': 'json',
-        'fields': 'clazzid,popupagreement,personid,clazzname,createtime'
+        'fields': 'clazzid,popupagreement,personid,clazzname,createtime',
       };
 
       final response = await ApiService.sendRequest(url, params: params);
@@ -86,9 +92,15 @@ class CXCourseApi {
   }
 
   /// 获取任务活动列表
-  static Future<Map<String, dynamic>?> getTaskActivityList(String courseId, String classId, String cpi, String joinClassTime) async {
+  static Future<Map<String, dynamic>?> getTaskActivityList(
+    String courseId,
+    String classId,
+    String cpi,
+    String joinClassTime,
+  ) async {
     try {
-      final url = 'https://mobilelearn.chaoxing.com/ppt/activeAPI/taskactivelist';
+      final url =
+          'https://mobilelearn.chaoxing.com/ppt/activeAPI/taskactivelist';
       final currentUserId = AccountManager.currentSessionId ?? '';
 
       Map<String, String> params = {
@@ -96,11 +108,15 @@ class CXCourseApi {
         'classId': classId,
         'uid': currentUserId,
         'cpi': cpi,
-        'joinclasstime': joinClassTime
+        'joinclasstime': joinClassTime,
       };
       params.addAll(EncryptionUtil.getEncParams(params));
 
-      final response = await ApiService.sendRequest(url, method: 'GET', params: params);
+      final response = await ApiService.sendRequest(
+        url,
+        method: 'GET',
+        params: params,
+      );
       return response.data;
     } catch (e) {
       debugPrint('getTaskActivityList error: $e');
@@ -109,9 +125,13 @@ class CXCourseApi {
   }
 
   /// 获取任务活动列表（Web）
-  static Future<Map<String, dynamic>?> getTaskActivityListWeb(String courseId, String classId) async {
+  static Future<Map<String, dynamic>?> getTaskActivityListWeb(
+    String courseId,
+    String classId,
+  ) async {
     try {
-      final url = 'https://mobilelearn.chaoxing.com/v2/apis/active/student/activelist';
+      final url =
+          'https://mobilelearn.chaoxing.com/v2/apis/active/student/activelist';
 
       final timeStampMS = DateTime.now().millisecondsSinceEpoch.toString();
       // final fid = await CookieManager.getCookieValue('fid') ?? '';
@@ -121,10 +141,14 @@ class CXCourseApi {
         'courseId': courseId,
         'classId': classId,
         'showNotStartedActive': '0',
-        '_': timeStampMS
+        '_': timeStampMS,
       };
 
-      final response = await ApiService.sendRequest(url, method: 'GET', params: params);
+      final response = await ApiService.sendRequest(
+        url,
+        method: 'GET',
+        params: params,
+      );
       return response.data;
     } catch (e) {
       debugPrint('getTaskActivityList error: $e');
@@ -133,36 +157,42 @@ class CXCourseApi {
   }
 
   /// 获取合并处理后的活动列表
-  static Future<List<Active>?> getActiveList(String courseId, String classId, String cpi) async {
+  static Future<List<Active>?> getActiveList(
+    String courseId,
+    String classId,
+    String cpi,
+  ) async {
     try {
       // 自动获取加入课程时间
-      final joinClassTime = await getJoinClassTime(courseId, classId, cpi) ?? '';
-        
+      final joinClassTime =
+          await getJoinClassTime(courseId, classId, cpi) ?? '';
+
       final results = await Future.wait([
         getTaskActivityList(courseId, classId, cpi, joinClassTime),
         getTaskActivityListWeb(courseId, classId),
       ]);
-        
+
       final taskData = results[0];
       final webTaskData = results[1];
-  
+
       if (taskData == null || webTaskData == null) {
         return null;
       }
-  
+
       List<Active> contentList = [];
       List<dynamic> activeList = taskData['activeList'];
       List<dynamic> webActiveList = webTaskData['data']['activeList'];
-  
+
       // app 和 web 的 api 活动结束时间存在差异 顺序会匹配错误
       Map<String, dynamic> activeMap = {
-        for (var activeItem in webActiveList) activeItem['id'].toString(): activeItem
+        for (var activeItem in webActiveList)
+          activeItem['id'].toString(): activeItem,
       };
-  
+
       for (var activeData in activeList) {
         Active active = Active.fromJson(activeData);
         String activeId = activeData['id'].toString();
-  
+
         if (activeMap.containsKey(activeId)) {
           var activeItem = activeMap[activeId];
           if (active.status) {
@@ -170,7 +200,7 @@ class CXCourseApi {
               active.description = activeItem['nameFour'];
             }
           }
-  
+
           if (active.activeType == ActiveType.signIn ||
               active.activeType == ActiveType.signOut) {
             final otherId = activeItem['otherId'];
@@ -185,7 +215,7 @@ class CXCourseApi {
         }
         contentList.add(active);
       }
-  
+
       return contentList;
     } catch (e) {
       debugPrint('getActiveList error: $e');
@@ -199,7 +229,6 @@ class RCCourseApi {
   static final Map<String, List<String>> _tokens = {};
 
   static String get _currentSessionId => AccountManager.currentSessionId!;
-
 
   /// 获取当前用户的 bearerToken
   static String? getBearerToken() {
@@ -218,19 +247,20 @@ class RCCourseApi {
   static Future<String?> uploadImageToQiniu(File imageFile) async {
     try {
       final tokenUrl = '/pc/generate_qiniu_token';
-      final jsonData = {
-        'bucket_name': 'cms-attachment',
-        'expired_time': 3600
-      };
-      final tokenResponse = await ApiService.sendRequest(tokenUrl, method: 'POST', body: jsonData);
+      final jsonData = {'bucket_name': 'cms-attachment', 'expired_time': 3600};
+      final tokenResponse = await ApiService.sendRequest(
+        tokenUrl,
+        method: 'POST',
+        body: jsonData,
+      );
 
-      if (tokenResponse.data == null || 
+      if (tokenResponse.data == null ||
           tokenResponse.data['success'] != true ||
           tokenResponse.data['data'] == null) {
         debugPrint('Failed to get qiniu token');
         return null;
       }
-      
+
       final token = tokenResponse.data['data']['token'];
 
       final timestamp = DateTime.now().millisecondsSinceEpoch.toString();
@@ -239,14 +269,21 @@ class RCCourseApi {
 
       final uploadUrl = 'https://upload.qiniup.com/';
       FormData formData = FormData.fromMap({
-        'file': await MultipartFile.fromFile(imageFile.path, filename: fileName),
+        'file': await MultipartFile.fromFile(
+          imageFile.path,
+          filename: fileName,
+        ),
         'token': token,
         'key': fileName,
-        'fname': originalFileName
+        'fname': originalFileName,
       });
-      final uploadResponse = await ApiService.sendRequest(uploadUrl, method: 'POST', body: formData);
+      final uploadResponse = await ApiService.sendRequest(
+        uploadUrl,
+        method: 'POST',
+        body: formData,
+      );
 
-      if (uploadResponse.data == null || 
+      if (uploadResponse.data == null ||
           uploadResponse.data['success'] != true) {
         debugPrint('Failed to upload to qiniu');
         return null;
@@ -286,13 +323,15 @@ class RCCourseApi {
   }
 
   /// 获取处理后的课程列表
-  static Future<List<Course>?> getCoursesList([Map<String, dynamic>? onLessonCourses]) async {
+  static Future<List<Course>?> getCoursesList([
+    Map<String, dynamic>? onLessonCourses,
+  ]) async {
     try {
       late Map<String, dynamic>? courses;
       if (onLessonCourses == null) {
         final results = await Future.wait([
           getCourses(),
-          getOnLessonAndUpcomingExam()
+          getOnLessonAndUpcomingExam(),
         ]);
         courses = results[0];
         onLessonCourses = results[1];
@@ -305,15 +344,18 @@ class RCCourseApi {
       }
 
       Map<String, dynamic> coursesMap = {
-        for (var courseItem in courses['data']) courseItem['course_id'].toString(): courseItem
+        for (var courseItem in courses['data'])
+          courseItem['course_id'].toString(): courseItem,
       };
-      debugPrint('coursesMap: $coursesMap');
 
       List<Course> contentList = [];
 
-      final school = AccountManager.getAccountById(AccountManager.currentSessionId!)!.school;
+      final school = AccountManager.getAccountById(
+        AccountManager.currentSessionId!,
+      )!.school;
 
-      for (var onLessonCourseItem in onLessonCourses['data']['onLessonClassrooms']){
+      for (var onLessonCourseItem
+          in onLessonCourses['data']['onLessonClassrooms']) {
         final String courseId = onLessonCourseItem['courseId'];
         if (coursesMap.containsKey(courseId)) {
           var courseItem = coursesMap[courseId];
@@ -325,8 +367,8 @@ class RCCourseApi {
       }
 
       return contentList;
-    } catch (e) {
-      debugPrint('getCoursesList error: $e');
+    } catch (e, stackTrace) {
+      debugPrint('getCoursesList error: $e\n$stackTrace');
       return null;
     }
   }
@@ -337,9 +379,13 @@ class RCCourseApi {
       final jsonData = {
         'source': 21, // 21: 扫码跳转 23: 点击课堂
         'lessonId': lessonId,
-        'joinIfNotIn': true
+        'joinIfNotIn': true,
       };
-      final response = await ApiService.sendRequest(url, method: 'POST', body: jsonData);
+      final response = await ApiService.sendRequest(
+        url,
+        method: 'POST',
+        body: jsonData,
+      );
       final data = response.data;
 
       final int code = data['code'];
@@ -363,7 +409,11 @@ class RCCourseApi {
     try {
       final url = '/api/v3/app/scan';
       final jsonData = {'url': qrCodeUrl};
-      final response = await ApiService.sendRequest(url, method: 'POST', body: jsonData);
+      final response = await ApiService.sendRequest(
+        url,
+        method: 'POST',
+        body: jsonData,
+      );
       final data = response.data;
 
       final int code = data['code'];
@@ -382,9 +432,12 @@ class RCCourseApi {
     return null;
   }
 
-  static Future<Map<String, dynamic>?> getPresentation(String presentationId) async {
+  static Future<Map<String, dynamic>?> getPresentation(
+    String presentationId,
+  ) async {
     try {
-      final url = '/api/v3/lesson/presentation/fetch?presentation_id=$presentationId';
+      final url =
+          '/api/v3/lesson/presentation/fetch?presentation_id=$presentationId';
       final bearerToken = getBearerToken();
       if (bearerToken == null) {
         debugPrint('bearerToken 为空');
@@ -401,39 +454,51 @@ class RCCourseApi {
 
   /// 提交答案
   /// 在answer提交失败后会反复进行retry
-  static Future<Map<String, dynamic>?> answer(String problemId, int problemType,
-      {bool retry = false, int? time, List<String>? options, String? content, List<String>? imageUrls}) async {
+  static Future<Map<String, dynamic>?> answer(
+    String problemId,
+    int problemType, {
+    bool retry = false,
+    int? time,
+    List<String>? options,
+    String? content,
+    List<String>? imageUrls,
+  }) async {
     try {
-      final url = retry ?
-      '/api/v3/lesson/problem/retry' : '/api/v3/lesson/problem/answer';
+      final url = retry
+          ? '/api/v3/lesson/problem/retry'
+          : '/api/v3/lesson/problem/answer';
       final bearerToken = getBearerToken();
       if (bearerToken == null) {
         debugPrint('bearerToken 为空');
         return null;
       }
       final headers = {'authorization': 'Bearer $bearerToken'};
-      final timestampMS = (time == null) ?
-      DateTime.now().millisecondsSinceEpoch : time;
+      final timestampMS = (time == null)
+          ? DateTime.now().millisecondsSinceEpoch
+          : time;
       late dynamic result;
-      if (problemType == 5) { // 主观题
+      if (problemType == 5) {
+        // 主观题
         var pics = [];
         if (imageUrls != null) {
           for (var imageUrl in imageUrls) {
             pics.add({
               'pic': imageUrl, // https://qn-v.yuketang.cn/tmp_.jpg
-              'thumb': '$imageUrl?imageView2/2/w/568'
+              'thumb': '$imageUrl?imageView2/2/w/568',
             });
           }
         } else {
-          pics = [{
-            'pic': '', // https://qn-v.yuketang.cn/tmp_.jpg
-            'thumb': ''
-          }];
+          pics = [
+            {
+              'pic': '', // https://qn-v.yuketang.cn/tmp_.jpg
+              'thumb': '',
+            },
+          ];
         }
         result = {
           'content': content ?? '',
           'pics': pics,
-          'videos': [] // 雨课堂对视频的支持不好 不做处理了
+          'videos': [], // 雨课堂对视频的支持不好 不做处理了
         };
       } else {
         result = options;
@@ -442,13 +507,20 @@ class RCCourseApi {
         'problemId': problemId,
         'dt': timestampMS,
         'problemType': problemType,
-        'result': result
+        'result': result,
       };
       if (retry) {
         jsonData['retry_times'] = null;
-        jsonData = {'problems': [jsonData]};
+        jsonData = {
+          'problems': [jsonData],
+        };
       }
-      final response = await ApiService.sendRequest(url, method: 'POST', headers: headers, body: jsonData);
+      final response = await ApiService.sendRequest(
+        url,
+        method: 'POST',
+        headers: headers,
+        body: jsonData,
+      );
       return response.data;
     } catch (e) {
       debugPrint('answer error: $e');
