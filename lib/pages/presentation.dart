@@ -6,12 +6,13 @@ import 'package:path_provider/path_provider.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:flutter_html/flutter_html.dart';
+import 'package:flutter/services.dart';
 import 'package:image_gallery_saver_plus/image_gallery_saver_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io' show WebSocket, File, Platform;
-import 'dart:typed_data';
+import 'dart:io' show WebSocket, Directory, File, Platform;
+import 'dart:math' as math;
 
 import '../api/api_service.dart';
 import '../api/course.dart';
@@ -33,6 +34,12 @@ class PresentationPage extends StatefulWidget {
 }
 
 class _PresentationPageState extends State<PresentationPage> {
+  static const MethodChannel _fileExportChannel = MethodChannel(
+    'course_helper/file_export',
+  );
+  static const int _pdfDownloadBatchSize = 4;
+
+  int? _cachedAndroidSdkInt;
   WebSocket? _ws;
   final ScrollController _scrollController = ScrollController();
   final PageController _pageController = PageController();
@@ -40,6 +47,8 @@ class _PresentationPageState extends State<PresentationPage> {
   int _currentSlideIndex = 0; // 当前浏览的页码
   int _currentLessonSlideIndex = 0; // 课堂播放的页码
   int _totalCount = 0;
+  double _presentationWidth = 1600;
+  double _presentationHeight = 900;
   List<Map<String, dynamic>> _slides = [];
   String? _currentPresentationId;
   final List<String> _unlockedProblemIds = [];
@@ -493,6 +502,8 @@ class _PresentationPageState extends State<PresentationPage> {
               )
               .toList();
           _totalCount = presentation.slides.length;
+          _presentationWidth = math.max(1, presentation.width).toDouble();
+          _presentationHeight = math.max(1, presentation.height).toDouble();
           _currentPresentationId = presentationId;
           if (_slides.isNotEmpty &&
               _currentSlideIndex >= 0 &&
@@ -558,6 +569,17 @@ class _PresentationPageState extends State<PresentationPage> {
       }
     }
     return null;
+  }
+
+  List<String> _collectSlideImageUrls() {
+    final imageUrls = <String>[];
+    for (var i = 0; i < _slides.length; i++) {
+      final imageUrl = _getSlideImageUrlByIndex(i);
+      if (imageUrl != null && imageUrl.isNotEmpty) {
+        imageUrls.add(imageUrl);
+      }
+    }
+    return imageUrls;
   }
 
   String _timestamp() {
@@ -629,6 +651,39 @@ class _PresentationPageState extends State<PresentationPage> {
     return result == true;
   }
 
+  Future<int?> _getAndroidSdkInt() async {
+    if (!Platform.isAndroid) return null;
+    if (_cachedAndroidSdkInt != null) {
+      return _cachedAndroidSdkInt;
+    }
+
+    try {
+      _cachedAndroidSdkInt = await _fileExportChannel.invokeMethod<int>(
+        'getAndroidSdkInt',
+      );
+      return _cachedAndroidSdkInt;
+    } catch (_) {
+      final match = RegExp(
+        r'SDK\s*(\d+)',
+        caseSensitive: false,
+      ).firstMatch(Platform.operatingSystemVersion);
+      _cachedAndroidSdkInt = int.tryParse(match?.group(1) ?? '');
+      return _cachedAndroidSdkInt;
+    }
+  }
+
+  Future<bool> _ensureLegacyAndroidStoragePermission() async {
+    final sdkInt = await _getAndroidSdkInt();
+    final requiresPermission =
+        Platform.isAndroid && (sdkInt == null || sdkInt < 29);
+    if (!requiresPermission) {
+      return true;
+    }
+
+    final storageStatus = await Permission.storage.request();
+    return storageStatus.isGranted;
+  }
+
   Future<bool> _ensureGalleryPermission() async {
     if (Platform.isIOS) {
       final status = await Permission.photosAddOnly.request();
@@ -636,15 +691,95 @@ class _PresentationPageState extends State<PresentationPage> {
     }
 
     if (Platform.isAndroid) {
-      final photosStatus = await Permission.photos.request();
-      if (photosStatus.isGranted || photosStatus.isLimited) {
-        return true;
-      }
-      final storageStatus = await Permission.storage.request();
-      return storageStatus.isGranted;
+      return _ensureLegacyAndroidStoragePermission();
     }
 
     return true;
+  }
+
+  Future<Directory> _getPdfFallbackDirectory() async {
+    if (Platform.isAndroid) {
+      final downloadsDir = await getDownloadsDirectory();
+      if (downloadsDir != null) {
+        final exportDir = Directory(
+          p.join(downloadsDir.path, 'course_helper_exports'),
+        );
+        await exportDir.create(recursive: true);
+        return exportDir;
+      }
+
+      final externalDir = await getExternalStorageDirectory();
+      if (externalDir != null) {
+        final exportDir = Directory(
+          p.join(externalDir.path, 'course_helper_exports'),
+        );
+        await exportDir.create(recursive: true);
+        return exportDir;
+      }
+    }
+
+    final documentsDir = await getApplicationDocumentsDirectory();
+    final exportDir = Directory(
+      p.join(documentsDir.path, 'course_helper_exports'),
+    );
+    await exportDir.create(recursive: true);
+    return exportDir;
+  }
+
+  Future<File> _copyPdfToFallbackDirectory(
+    File sourceFile,
+    String fileName,
+  ) async {
+    final exportDir = await _getPdfFallbackDirectory();
+    final targetFile = File(p.join(exportDir.path, fileName));
+    return sourceFile.copy(targetFile.path);
+  }
+
+  Future<String?> _savePdfToAndroidDownloads(
+    File sourceFile,
+    String fileName,
+  ) async {
+    return _fileExportChannel.invokeMethod<String>('savePdfToDownloads', {
+      'sourcePath': sourceFile.path,
+      'displayName': fileName,
+      'subdirectory': 'Course Helper',
+    });
+  }
+
+  Future<String> _persistPdfFile(File sourceFile, String fileName) async {
+    if (Platform.isAndroid) {
+      if (!await _ensureLegacyAndroidStoragePermission()) {
+        final fallbackFile = await _copyPdfToFallbackDirectory(
+          sourceFile,
+          fileName,
+        );
+        return '未获得旧版 Android 存储权限，已保存到应用目录：${fallbackFile.path}';
+      }
+
+      try {
+        final savedPath = await _savePdfToAndroidDownloads(
+          sourceFile,
+          fileName,
+        );
+        if (savedPath != null && savedPath.isNotEmpty) {
+          return '完整PDF已保存到下载目录：$savedPath';
+        }
+      } catch (e) {
+        debugPrint('保存到 Android 下载目录失败：$e');
+      }
+
+      final fallbackFile = await _copyPdfToFallbackDirectory(
+        sourceFile,
+        fileName,
+      );
+      return '下载目录保存失败，已改为保存到应用目录：${fallbackFile.path}';
+    }
+
+    final fallbackFile = await _copyPdfToFallbackDirectory(
+      sourceFile,
+      fileName,
+    );
+    return '完整PDF已保存到：${fallbackFile.path}';
   }
 
   Future<String?> _saveSingleSlideImage(int index) async {
@@ -673,55 +808,86 @@ class _PresentationPageState extends State<PresentationPage> {
     return null;
   }
 
-  Future<String?> _saveAllSlidesToPdf() async {
-    if (!await _ensureGalleryPermission()) {
-      return '未获得相册权限';
+  Future<String?> _saveAllSlidesToPdf({
+    void Function(String message)? onProgress,
+  }) async {
+    final imageUrls = _collectSlideImageUrls();
+    if (imageUrls.isEmpty) {
+      return '当前没有可导出的课件图片';
     }
-
-    final imageUrls = <String>[];
-    for (var i = 0; i < _slides.length; i++) {
-      final imageUrl = _getSlideImageUrlByIndex(i);
-      if (imageUrl != null) {
-        imageUrls.add(imageUrl);
-      }
-    }
-    if (imageUrls.isEmpty) return null;
 
     final document = pw.Document();
     var addedPages = 0;
+    var processedPages = 0;
 
-    for (final imageUrl in imageUrls) {
-      final bytes = await _downloadBytesWithRedirect(imageUrl);
-      if (bytes == null || bytes.isEmpty) continue;
+    try {
+      for (
+        var start = 0;
+        start < imageUrls.length;
+        start += _pdfDownloadBatchSize
+      ) {
+        final end = math.min(start + _pdfDownloadBatchSize, imageUrls.length);
+        final batchUrls = imageUrls.sublist(start, end);
 
-      final image = pw.MemoryImage(bytes);
-      document.addPage(
-        pw.Page(
-          pageFormat: const PdfPageFormat(1600, 900),
-          margin: pw.EdgeInsets.zero,
-          build: (context) {
-            return pw.Center(child: pw.Image(image, fit: pw.BoxFit.contain));
-          },
-        ),
-      );
-      addedPages++;
+        onProgress?.call('正在下载课件图片 ${start + 1}-$end / ${imageUrls.length}');
+
+        final batchResults = await Future.wait(
+          batchUrls.map(
+            (imageUrl) async =>
+                MapEntry(imageUrl, await _downloadBytesWithRedirect(imageUrl)),
+          ),
+        );
+
+        for (final entry in batchResults) {
+          processedPages++;
+          onProgress?.call('正在写入 PDF $processedPages / ${imageUrls.length}');
+          final bytes = entry.value;
+          if (bytes == null || bytes.isEmpty) {
+            continue;
+          }
+
+          final image = pw.MemoryImage(bytes);
+          document.addPage(
+            pw.Page(
+              pageFormat: PdfPageFormat(
+                _presentationWidth,
+                _presentationHeight,
+              ),
+              margin: pw.EdgeInsets.zero,
+              build: (context) {
+                return pw.SizedBox.expand(
+                  child: pw.Image(image, fit: pw.BoxFit.contain),
+                );
+              },
+            ),
+          );
+          addedPages++;
+        }
+      }
+
+      if (addedPages == 0) {
+        return '课件图片下载失败，未生成 PDF';
+      }
+
+      onProgress?.call('正在生成 PDF 文件...');
+
+      final fileName =
+          '${_safeFileName(widget.title)}_完整PPT_${_timestamp()}.pdf';
+      final tempDir = await getTemporaryDirectory();
+      final file = File(p.join(tempDir.path, fileName));
+      await file.writeAsBytes(await document.save(), flush: true);
+
+      onProgress?.call('正在保存到设备...');
+      final saveMessage = await _persistPdfFile(file, fileName);
+
+      if (addedPages == imageUrls.length) {
+        return saveMessage;
+      }
+      return '$saveMessage（成功导出 $addedPages/${imageUrls.length} 页）';
+    } catch (e) {
+      debugPrint('保存完整 PDF 失败：$e');
+      return '保存完整 PDF 失败：$e';
     }
-
-    if (addedPages == 0) return null;
-
-    final fileName = '${_safeFileName(widget.title)}_完整PPT_${_timestamp()}.pdf';
-    final tempDir = await getTemporaryDirectory();
-    final file = File(p.join(tempDir.path, fileName));
-    await file.writeAsBytes(await document.save(), flush: true);
-
-    final result = await ImageGallerySaverPlus.saveFile(
-      file.path,
-      name: fileName,
-    );
-    if (_isGallerySaveSuccess(result)) {
-      return '完整PDF已保存到相册';
-    }
-    return '相册不支持直接保存PDF（已生成PDF：${file.path}）';
   }
 
   void _openSlideImagePreview(int initialIndex) {
@@ -738,7 +904,8 @@ class _PresentationPageState extends State<PresentationPage> {
           imageUrls: imageUrls,
           initialIndex: initialIndex,
           onSaveSingle: (index) => _saveSingleSlideImage(index),
-          onSaveAllPdf: _saveAllSlidesToPdf,
+          onSaveAllPdf: (onProgress) =>
+              _saveAllSlidesToPdf(onProgress: onProgress),
         ),
       ),
     );
@@ -1807,7 +1974,8 @@ class _SlideImagePreviewPage extends StatefulWidget {
   final List<String> imageUrls;
   final int initialIndex;
   final Future<String?> Function(int index) onSaveSingle;
-  final Future<String?> Function() onSaveAllPdf;
+  final Future<String?> Function(void Function(String message)? onProgress)
+  onSaveAllPdf;
 
   const _SlideImagePreviewPage({
     required this.imageUrls,
@@ -1824,6 +1992,7 @@ class _SlideImagePreviewPageState extends State<_SlideImagePreviewPage> {
   late final PageController _pageController;
   late int _currentIndex;
   bool _isSaving = false;
+  String _savingText = '正在保存，请稍候...';
 
   @override
   void initState() {
@@ -1842,6 +2011,7 @@ class _SlideImagePreviewPageState extends State<_SlideImagePreviewPage> {
     if (_isSaving) return;
     setState(() {
       _isSaving = true;
+      _savingText = '正在保存当前页面...';
     });
     final message = await widget.onSaveSingle(_currentIndex);
     if (!mounted) return;
@@ -1858,8 +2028,14 @@ class _SlideImagePreviewPageState extends State<_SlideImagePreviewPage> {
     if (_isSaving) return;
     setState(() {
       _isSaving = true;
+      _savingText = '正在准备导出 PDF...';
     });
-    final message = await widget.onSaveAllPdf();
+    final message = await widget.onSaveAllPdf((progress) {
+      if (!mounted) return;
+      setState(() {
+        _savingText = progress;
+      });
+    });
     if (!mounted) return;
     setState(() {
       _isSaving = false;
@@ -1942,12 +2118,12 @@ class _SlideImagePreviewPageState extends State<_SlideImagePreviewPage> {
               child: Container(
                 color: Colors.black45,
                 alignment: Alignment.center,
-                child: const Column(
+                child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    CircularProgressIndicator(),
-                    SizedBox(height: 12),
-                    Text('正在保存，请稍候...', style: TextStyle(color: Colors.white)),
+                    const CircularProgressIndicator(),
+                    const SizedBox(height: 12),
+                    Text(_savingText, style: TextStyle(color: Colors.white)),
                   ],
                 ),
               ),
