@@ -143,10 +143,15 @@ class ApiService {
         maxWidth: 90,
         enabled: kDebugMode,
         filter: (options, args) {
-          if (args.data.toString().contains('<html>')) {
+          if (args.isResponse &&
+              (args.hasUint8ListData || args.data is ResponseBody)) {
             return false;
           }
-          return !args.isResponse || !args.hasUint8ListData;
+          final data = args.data;
+          if (data is String && data.contains('<html>')) {
+            return false;
+          }
+          return true;
         },
       ),
     );

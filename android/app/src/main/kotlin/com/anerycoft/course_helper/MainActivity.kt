@@ -14,8 +14,11 @@ import io.flutter.plugins.GeneratedPluginRegistrant
 import java.io.File
 import java.io.FileInputStream
 import java.io.IOException
+import java.util.concurrent.Executors
 
 class MainActivity: FlutterActivity() {
+    private val fileExportExecutor = Executors.newSingleThreadExecutor()
+
     private companion object {
         const val FILE_EXPORT_CHANNEL = "course_helper/file_export"
     }
@@ -54,21 +57,27 @@ class MainActivity: FlutterActivity() {
                     return
                 }
 
-                try {
-                    result.success(
-                        savePdfToDownloads(
+                fileExportExecutor.execute {
+                    try {
+                        val savedPath = savePdfToDownloads(
                             sourcePath = sourcePath,
                             displayName = displayName,
                             subdirectory = subdirectory
                         )
-                    )
-                } catch (e: Exception) {
-                    result.error("save_pdf_failed", e.message, null)
+                        runOnUiThread { result.success(savedPath) }
+                    } catch (e: Exception) {
+                        runOnUiThread { result.error("save_pdf_failed", e.message, null) }
+                    }
                 }
             }
 
             else -> result.notImplemented()
         }
+    }
+
+    override fun onDestroy() {
+        fileExportExecutor.shutdown()
+        super.onDestroy()
     }
 
     private fun savePdfToDownloads(

@@ -3,21 +3,20 @@ import 'package:image_picker/image_picker.dart';
 import 'package:dio/dio.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
-import 'package:pdf/pdf.dart';
-import 'package:pdf/widgets.dart' as pw;
 import 'package:flutter_html/flutter_html.dart';
 import 'package:flutter/services.dart';
 import 'package:image_gallery_saver_plus/image_gallery_saver_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io' show WebSocket, Directory, File, Platform;
+import 'dart:io' show WebSocket, Directory, File, FileMode, Platform;
 import 'dart:math' as math;
 
 import '../api/api_service.dart';
 import '../api/course.dart';
 import '../models/presentation.dart';
 import '../session/account.dart';
+import '../utils/slide_pdf_writer.dart';
 
 class PresentationPage extends StatefulWidget {
   final String lessonId;
@@ -38,6 +37,7 @@ class _PresentationPageState extends State<PresentationPage> {
     'course_helper/file_export',
   );
   static const int _pdfDownloadBatchSize = 4;
+  static bool _isPdfExportRunning = false;
 
   int? _cachedAndroidSdkInt;
   WebSocket? _ws;
@@ -638,6 +638,63 @@ class _PresentationPageState extends State<PresentationPage> {
     return null;
   }
 
+  Future<File?> _downloadSlideFileWithRedirect(String url, File target) async {
+    var complete = false;
+    try {
+      var currentUrl = url;
+      for (var i = 0; i < 5; i++) {
+        final response = await ApiService.sendRequest(
+          currentUrl,
+          responseType: ResponseType.stream,
+        );
+        final body = response.data as ResponseBody;
+        final statusCode = response.statusCode ?? 0;
+        final location = response.headers.value('location');
+        if (statusCode >= 300 && statusCode < 400 && location != null) {
+          await body.stream.take(0).drain<void>();
+          currentUrl = Uri.parse(currentUrl).resolve(location).toString();
+          continue;
+        }
+        final length = int.tryParse(
+          response.headers.value(Headers.contentLengthHeader) ?? '',
+        );
+        if (statusCode < 200 ||
+            statusCode >= 300 ||
+            (length != null && length > SlidePdfWriter.maxImageBytes)) {
+          await body.stream.take(0).drain<void>();
+          return null;
+        }
+        final file = await target.open(mode: FileMode.write);
+        var received = 0;
+        try {
+          await for (final chunk in body.stream) {
+            received += chunk.length;
+            if (received > SlidePdfWriter.maxImageBytes) {
+              throw const SlideImageException('图片文件过大');
+            }
+            await file.writeFrom(chunk);
+          }
+        } finally {
+          await file.close();
+        }
+        if (received == 0) return null;
+        complete = true;
+        return target;
+      }
+    } catch (e) {
+      debugPrint('下载课件图片失败：$e');
+    } finally {
+      if (!complete) {
+        try {
+          if (await target.exists()) await target.delete();
+        } catch (e) {
+          debugPrint('清理下载文件失败：$e');
+        }
+      }
+    }
+    return null;
+  }
+
   bool _isGallerySaveSuccess(dynamic result) {
     if (result is Map) {
       final value = result['isSuccess'] ?? result['success'];
@@ -815,12 +872,27 @@ class _PresentationPageState extends State<PresentationPage> {
     if (imageUrls.isEmpty) {
       return '当前没有可导出的课件图片';
     }
-
-    final document = pw.Document();
+    if (_isPdfExportRunning) {
+      return '正在导出 PDF，请等待当前任务完成';
+    }
+    _isPdfExportRunning = true;
+    Directory? workDir;
+    SlidePdfWriter? writer;
     var addedPages = 0;
     var processedPages = 0;
 
     try {
+      final tempDir = await getTemporaryDirectory();
+      final directory = await tempDir.createTemp('slide_pdf_');
+      workDir = directory;
+      final fileName =
+          '${_safeFileName(widget.title)}_完整PPT_${_timestamp()}.pdf';
+      final file = File(p.join(workDir.path, fileName));
+      writer = await SlidePdfWriter.open(
+        file,
+        pageWidth: _presentationWidth,
+        pageHeight: _presentationHeight,
+      );
       for (
         var start = 0;
         start < imageUrls.length;
@@ -832,50 +904,35 @@ class _PresentationPageState extends State<PresentationPage> {
         onProgress?.call('正在下载课件图片 ${start + 1}-$end / ${imageUrls.length}');
 
         final batchResults = await Future.wait(
-          batchUrls.map(
-            (imageUrl) async =>
-                MapEntry(imageUrl, await _downloadBytesWithRedirect(imageUrl)),
+          batchUrls.asMap().entries.map(
+            (entry) => _downloadSlideFileWithRedirect(
+              entry.value,
+              File(p.join(directory.path, 'slide_${start + entry.key}')),
+            ),
           ),
         );
 
-        for (final entry in batchResults) {
+        for (final imageFile in batchResults) {
           processedPages++;
-          onProgress?.call('正在写入 PDF $processedPages / ${imageUrls.length}');
-          final bytes = entry.value;
-          if (bytes == null || bytes.isEmpty) {
-            continue;
+          onProgress?.call('正在合成 PDF $processedPages / ${imageUrls.length}');
+          if (imageFile == null) continue;
+          try {
+            await writer.addImageFile(imageFile);
+            addedPages++;
+          } on SlideImageException catch (e) {
+            debugPrint('跳过无效课件图片：$e');
+          } finally {
+            await imageFile.delete();
           }
-
-          final image = pw.MemoryImage(bytes);
-          document.addPage(
-            pw.Page(
-              pageFormat: PdfPageFormat(
-                _presentationWidth,
-                _presentationHeight,
-              ),
-              margin: pw.EdgeInsets.zero,
-              build: (context) {
-                return pw.SizedBox.expand(
-                  child: pw.Image(image, fit: pw.BoxFit.contain),
-                );
-              },
-            ),
-          );
-          addedPages++;
         }
       }
 
       if (addedPages == 0) {
-        return '课件图片下载失败，未生成 PDF';
+        return '课件图片下载或解码失败，未生成 PDF';
       }
 
       onProgress?.call('正在生成 PDF 文件...');
-
-      final fileName =
-          '${_safeFileName(widget.title)}_完整PPT_${_timestamp()}.pdf';
-      final tempDir = await getTemporaryDirectory();
-      final file = File(p.join(tempDir.path, fileName));
-      await file.writeAsBytes(await document.save(), flush: true);
+      await writer.finish();
 
       onProgress?.call('正在保存到设备...');
       final saveMessage = await _persistPdfFile(file, fileName);
@@ -887,6 +944,15 @@ class _PresentationPageState extends State<PresentationPage> {
     } catch (e) {
       debugPrint('保存完整 PDF 失败：$e');
       return '保存完整 PDF 失败：$e';
+    } finally {
+      try {
+        await writer?.close();
+        await workDir?.delete(recursive: true);
+      } catch (e) {
+        debugPrint('清理 PDF 临时文件失败：$e');
+      } finally {
+        _isPdfExportRunning = false;
+      }
     }
   }
 
